@@ -1,9 +1,10 @@
 var dnode = require('dnode'),
-    streamify = require('./streamify');
+  streamify = require('./streamify');
 
 process.on('message', function(m) {
-    if (m.cmd != 'load') return;
+  if (m.cmd === 'load') {
     var s = streamify(process);
     var api = dnode(require(m.path));
     s.pipe(api).pipe(s);
+  }
 });

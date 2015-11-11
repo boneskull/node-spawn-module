@@ -1,36 +1,46 @@
+'use strict';
+
 var cp = require('child_process');
 var streamify = require('./streamify');
 var dnode = require('dnode');
 var duplexer = require('duplexer');
 var through = require('through');
 var path = require('path');
+var Promise = require('bluebird');
 
-module.exports = function(requireFn, code, cb) {
-    if (!cb) {
-        cb = code
-        code = requireFn;
-        requireFn = null;
+module.exports = function(req, modulePath, cb) {
+  var child = cp.fork(require.resolve('./worker'));
+
+  if (typeof(req) === 'string') {
+    cb = modulePath;
+    modulePath = req;
+    if (!path.isAbsolute(modulePath)) {
+      modulePath = path.resolve(path.dirname(module.parent.filename), req);
     }
-    if (requireFn && requireFn.resolve)
-        code = requireFn.resolve(code);
+  } else if (req.resolve) {
+    modulePath = req.resolve(modulePath);
+  }
 
-    
-    var child = cp.fork(path.join(__dirname, 'worker'));
+  child.send({
+    cmd: 'load',
+    path: modulePath
+  });
 
-    child.send({cmd: 'load', path: code});
+  var d = dnode();
+  var s = streamify(child);
 
-    var d = dnode();
-    var s = streamify(child);
+  s.pipe(d).pipe(s);
 
-    s.pipe(d).pipe(s);
-
+  return new Promise(function(resolve) {
     d.on('remote', function(remote) {
-        remote.__child_process__ = child;
-        cb(null, remote);
+      remote.__child_process__ = child;
+      resolve(remote);
     });
-}
+  })
+    .asCallback(cb);
+};
 
 module.exports.kill = function(remote) {
-    remote.__child_process__.kill();
-    remote.__child_process__ = null;
+  remote.__child_process__.kill();
+  remote.__child_process__ = null;
 };
